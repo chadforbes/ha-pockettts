@@ -2,7 +2,7 @@
   "name": "Pocket TTS",
   "slug": "pockettts",
   "description": "Local CPU text-to-speech (Kyutai Pocket TTS, full FP32 quality).",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "arch": [
     "aarch64",
     "amd64"

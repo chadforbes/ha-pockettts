@@ -53,6 +53,12 @@ def log(message: str) -> None:
 
 
 def build_model() -> TTSModel:
+    # NNPACK isn't available on some virtualized CPUs and spams warnings; the
+    # normal fallback path works fine, so disable it quietly.
+    try:
+        torch.backends.nnpack.enabled = False
+    except Exception:  # noqa: BLE001 - best-effort, ignore if unavailable
+        pass
     torch.set_num_threads(max(1, NUM_THREADS))
     return TTSModel.load_model(
         language=LANGUAGE, temp=TEMPERATURE, eos_threshold=EOS_THRESHOLD
