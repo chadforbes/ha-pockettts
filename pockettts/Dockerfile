@@ -9,11 +9,12 @@ LABEL \
   io.hass.type="addon" \
   io.hass.arch="${BUILD_ARCH}"
 
-ENV PYTHONUNBUFFERED=1 \
+ENV HF_HOME=/data/hf \
+    PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PATH="/opt/venv/bin:$PATH"
 
-# Lean runtime: sherpa-onnx (bundles ONNX Runtime) + numpy. No PyTorch.
+# Full-precision (FP32) runtime: CPU-only PyTorch + the official pocket-tts.
 RUN \
   apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -23,7 +24,8 @@ RUN \
        ca-certificates \
   && python3 -m venv /opt/venv \
   && /opt/venv/bin/pip install --upgrade pip \
-  && /opt/venv/bin/pip install sherpa-onnx numpy scipy \
+  && /opt/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch \
+  && /opt/venv/bin/pip install pocket-tts \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/*
 

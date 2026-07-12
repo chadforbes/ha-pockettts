@@ -1,8 +1,8 @@
 {
   "name": "Pocket TTS",
   "slug": "pockettts",
-  "description": "Local, lightweight CPU text-to-speech (Kyutai Pocket TTS via ONNX / sherpa-onnx).",
-  "version": "1.3.0",
+  "description": "Local CPU text-to-speech (Kyutai Pocket TTS, full FP32 quality).",
+  "version": "2.0.0",
   "arch": [
     "aarch64",
     "amd64"
@@ -29,12 +29,16 @@
     "8000/tcp": "Pocket TTS HTTP API \u2014 used by the Pocket TTS integration"
   },
   "options": {
-    "num_steps": 8,
+    "language": "english",
+    "temperature": 0.7,
+    "eos_threshold": -4.0,
     "num_threads": 2,
     "voice": ""
   },
   "schema": {
-    "num_steps": "int(1,50)",
+    "language": "list(english|english_2026-01|french_24l|german_24l|portuguese_24l|italian_24l|spanish_24l)",
+    "temperature": "float(0,2)",
+    "eos_threshold": "float(-20,20)",
     "num_threads": "int(1,16)",
     "voice": "str?"
   }

@@ -1,17 +1,22 @@
 #!/usr/bin/with-contenv bashio
-# Start the lightweight Pocket TTS server (sherpa-onnx / ONNX Runtime).
+# Start the Pocket TTS server (official FP32 pocket-tts library).
 # It serves the web UI (ingress panel) and the HTTP API on port 8000.
 
-export NUM_STEPS="$(bashio::config 'num_steps')"
+export LANGUAGE="$(bashio::config 'language')"
+export TEMPERATURE="$(bashio::config 'temperature')"
+export EOS_THRESHOLD="$(bashio::config 'eos_threshold')"
 export NUM_THREADS="$(bashio::config 'num_threads')"
-export DATA_DIR="/data"
 export PORT="8000"
 
+# Persist the downloaded model between restarts (the add-on /data volume).
+export HF_HOME="/data/hf"
+mkdir -p "${HF_HOME}"
+
 if bashio::config.has_value 'voice'; then
-  export VOICE_WAV="$(bashio::config 'voice')"
+  export VOICE="$(bashio::config 'voice')"
 fi
 
-bashio::log.info "Starting Pocket TTS (sherpa-onnx, num_steps=${NUM_STEPS})..."
-bashio::log.info "First launch downloads the ONNX model, which can take a few minutes."
+bashio::log.info "Starting Pocket TTS (FP32, language=${LANGUAGE})..."
+bashio::log.info "First launch downloads the model, which can take a few minutes."
 
 exec /opt/venv/bin/python /server.py

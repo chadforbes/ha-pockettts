@@ -1,47 +1,48 @@
 #!/usr/bin/env python3
-"""Lightweight Pocket TTS HTTP server backed by sherpa-onnx (ONNX Runtime).
+"""Pocket TTS HTTP server backed by the official (FP32) pocket-tts library.
 
-No PyTorch. Uses the sherpa-onnx wheel + numpy + scipy + the Python standard
-library. Serves a small web UI (for the Home Assistant ingress panel) and a
-JSON ``/tts`` endpoint that returns a WAV file.
+Serves a small web UI (for the Home Assistant ingress panel) and a JSON
+``/tts`` endpoint that returns a WAV file. Voices can be built-in names, a
+cloned reference file (.wav/.mp3/.flac/...), or a pre-exported .safetensors
+voice profile.
 """
 
 from __future__ import annotations
 
 import io
 import json
-import math
 import os
-import tarfile
 import threading
-import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
 import numpy as np
-import scipy.signal
-import sherpa_onnx
+import torch
+from pocket_tts import TTSModel
 
-MODEL_NAME = "sherpa-onnx-pocket-tts-int8-2026-01-26"
-MODEL_URL = (
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/"
-    f"{MODEL_NAME}.tar.bz2"
-)
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-MODEL_DIR = DATA_DIR / MODEL_NAME
-
-NUM_STEPS = int(os.environ.get("NUM_STEPS", "8"))
+LANGUAGE = os.environ.get("LANGUAGE", "english").strip() or "english"
+TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
+EOS_THRESHOLD = float(os.environ.get("EOS_THRESHOLD", "-4.0"))
 NUM_THREADS = int(os.environ.get("NUM_THREADS", "2"))
 PORT = int(os.environ.get("PORT", "8000"))
-DEFAULT_VOICE_SPEC = os.environ.get("VOICE_WAV", "").strip()
+DEFAULT_VOICE_SPEC = os.environ.get("VOICE", "").strip()
 
-# Folders scanned for user voice .wav files (mounted read-only). Drop a .wav in
-# any of these on your Home Assistant host and it becomes a selectable voice.
+# Folders scanned for user voice files (mounted read-only). Drop a .wav/.mp3 or
+# a pre-exported .safetensors profile in any of these and it becomes a voice.
 VOICE_DIRS = [
     Path(os.environ.get("VOICES_DIR", "/share/pockettts")),
     Path("/media/pockettts"),
+]
+VOICE_SUFFIXES = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".safetensors"}
+
+# Voices bundled with Pocket TTS (usable without providing any files).
+BUILTIN_VOICES = [
+    "alba", "anna", "azelma", "bill_boerst", "caro_davy", "charles", "cosette",
+    "eponine", "eve", "fantine", "george", "jane", "jean", "javert", "marius",
+    "mary", "michael", "paul", "peter_yearsley", "stuart_bell", "vera",
+    "estelle", "giovanni", "lola", "juergen", "rafael",
 ]
 
 _generate_lock = threading.Lock()
@@ -51,69 +52,23 @@ def log(message: str) -> None:
     print(f"[pockettts] {message}", flush=True)
 
 
-def ensure_model() -> None:
-    """Download and extract the ONNX model on first run (cached in /data)."""
-    if MODEL_DIR.is_dir():
-        return
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    archive = DATA_DIR / f"{MODEL_NAME}.tar.bz2"
-    log(f"Downloading model from {MODEL_URL} (first run only)...")
-    urllib.request.urlretrieve(MODEL_URL, archive)  # noqa: S310 - fixed URL
-    log("Extracting model...")
-    with tarfile.open(archive, "r:bz2") as tar:
-        tar.extractall(DATA_DIR)
-    archive.unlink(missing_ok=True)
-    log("Model ready.")
-
-
-def build_tts() -> "sherpa_onnx.OfflineTts":
-    config = sherpa_onnx.OfflineTtsConfig(
-        model=sherpa_onnx.OfflineTtsModelConfig(
-            pocket=sherpa_onnx.OfflineTtsPocketModelConfig(
-                lm_flow=str(MODEL_DIR / "lm_flow.int8.onnx"),
-                lm_main=str(MODEL_DIR / "lm_main.int8.onnx"),
-                encoder=str(MODEL_DIR / "encoder.onnx"),
-                decoder=str(MODEL_DIR / "decoder.int8.onnx"),
-                text_conditioner=str(MODEL_DIR / "text_conditioner.onnx"),
-                vocab_json=str(MODEL_DIR / "vocab.json"),
-                token_scores_json=str(MODEL_DIR / "token_scores.json"),
-            ),
-            num_threads=NUM_THREADS,
-            provider="cpu",
-        )
+def build_model() -> TTSModel:
+    torch.set_num_threads(max(1, NUM_THREADS))
+    return TTSModel.load_model(
+        language=LANGUAGE, temp=TEMPERATURE, eos_threshold=EOS_THRESHOLD
     )
-    if not config.validate():
-        raise SystemExit("Invalid sherpa-onnx TTS configuration")
-    return sherpa_onnx.OfflineTts(config)
 
 
-def load_reference(path: Path, target_sr: int) -> np.ndarray:
-    """Load a WAV file as mono float32 resampled to target_sr."""
-    with wave.open(str(path), "rb") as w:
-        frames = w.readframes(w.getnframes())
-        sample_rate = w.getframerate()
-        channels = w.getnchannels()
-        width = w.getsampwidth()
-
-    if width == 2:
-        data = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
-    elif width == 4:
-        data = np.frombuffer(frames, dtype="<i4").astype(np.float32) / 2147483648.0
-    else:  # 8-bit unsigned
-        data = (np.frombuffer(frames, dtype=np.uint8).astype(np.float32) - 128) / 128.0
-
-    if channels > 1:
-        data = data.reshape(-1, channels).mean(axis=1)
-
-    if sample_rate != target_sr and len(data) > 1:
-        # Polyphase (anti-aliased) resampling — far cleaner than linear
-        # interpolation, which matters a lot for voice-clone fidelity.
-        divisor = math.gcd(int(sample_rate), int(target_sr))
-        up = int(target_sr) // divisor
-        down = int(sample_rate) // divisor
-        data = scipy.signal.resample_poly(data, up, down).astype(np.float32)
-
-    return np.ascontiguousarray(data, dtype=np.float32)
+def trim_silence(
+    audio: np.ndarray, sample_rate: int, thresh: float = 0.02, pad_s: float = 0.15
+) -> np.ndarray:
+    """Trim leading/trailing near-silence so end-of-speech doesn't leave gaps."""
+    mag = np.abs(audio)
+    loud = np.where(mag > thresh * (mag.max() or 1.0))[0]
+    if loud.size == 0:
+        return audio
+    pad = int(pad_s * sample_rate)
+    return audio[max(0, loud[0] - pad) : min(len(audio), loud[-1] + pad)]
 
 
 def encode_wav(samples: np.ndarray, sample_rate: int) -> bytes:
@@ -129,28 +84,30 @@ def encode_wav(samples: np.ndarray, sample_rate: int) -> bytes:
 
 
 class VoiceManager:
-    """Discovers voice .wav files and caches their reference audio."""
+    """Discovers voices (files + built-ins) and caches their model state."""
 
-    def __init__(self, sample_rate: int) -> None:
-        self._sample_rate = sample_rate
-        self._cache: dict[str, tuple[float, np.ndarray]] = {}
+    def __init__(self, model: TTSModel) -> None:
+        self._model = model
+        self._states: dict[str, object] = {}
 
-    def catalog(self) -> dict[str, Path]:
-        """Return {voice_name: path}; user voices override bundled ones."""
-        voices: dict[str, Path] = {}
-        for directory in (MODEL_DIR / "test_wavs", *VOICE_DIRS):
+    def catalog(self) -> dict[str, str]:
+        """Return {voice_name: spec}; a spec is a file path or a built-in name."""
+        voices: dict[str, str] = {}
+        for directory in VOICE_DIRS:
             if directory.is_dir():
-                for wav in sorted(directory.iterdir()):
-                    if wav.is_file() and wav.suffix.lower() == ".wav":
-                        voices[wav.stem] = wav
-        # Allow a configured path that lives outside those folders.
+                for item in sorted(directory.iterdir()):
+                    if item.is_file() and item.suffix.lower() in VOICE_SUFFIXES:
+                        voices[item.stem] = str(item)
+        for name in BUILTIN_VOICES:
+            voices.setdefault(name, name)
         if DEFAULT_VOICE_SPEC:
             for candidate in (
                 Path(DEFAULT_VOICE_SPEC),
                 Path("/share") / DEFAULT_VOICE_SPEC,
+                Path("/media") / DEFAULT_VOICE_SPEC,
             ):
                 if candidate.is_file():
-                    voices[candidate.stem] = candidate
+                    voices[candidate.stem] = str(candidate)
                     break
         return voices
 
@@ -161,28 +118,30 @@ class VoiceManager:
         voices = self.catalog()
         if DEFAULT_VOICE_SPEC and Path(DEFAULT_VOICE_SPEC).stem in voices:
             return Path(DEFAULT_VOICE_SPEC).stem
-        if "bria" in voices:
-            return "bria"
+        if DEFAULT_VOICE_SPEC in voices:
+            return DEFAULT_VOICE_SPEC
+        if "alba" in voices:
+            return "alba"
         return next(iter(sorted(voices)), "")
 
-    def reference(self, name: str) -> np.ndarray:
+    def state(self, name: str):
         voices = self.catalog()
-        path = voices.get(name) or voices.get(self.default())
-        if path is None:
+        key = name if name in voices else self.default()
+        spec = voices.get(key)
+        if spec is None:
             raise RuntimeError("No voices available")
-        mtime = path.stat().st_mtime
-        cached = self._cache.get(name)
-        if cached and cached[0] == mtime:
-            return cached[1]
-        ref = load_reference(path, self._sample_rate)
-        self._cache[name] = (mtime, ref)
-        return ref
+        cached = self._states.get(key)
+        if cached is not None:
+            return cached
+        state = self._model.get_state_for_audio_prompt(spec)
+        self._states[key] = state
+        return state
 
 
-ensure_model()
-log("Loading Pocket TTS model (sherpa-onnx)...")
-TTS = build_tts()
-VOICES = VoiceManager(TTS.sample_rate)
+log(f"Loading Pocket TTS model (FP32, language={LANGUAGE})...")
+log("First launch downloads the model, which can take a few minutes.")
+MODEL = build_model()
+VOICES = VoiceManager(MODEL)
 for directory in VOICE_DIRS:
     log(f"Voice folder {directory}: {'found' if directory.is_dir() else 'not present'}")
 log(f"Available voices: {', '.join(VOICES.names()) or '(none)'}")
@@ -192,15 +151,14 @@ log("Pocket TTS is ready.")
 
 def synthesize(text: str, voice: str | None = None) -> bytes:
     name = (voice or "").strip() or VOICES.default()
-    gen = sherpa_onnx.GenerationConfig()
-    gen.reference_audio = VOICES.reference(name)
-    gen.reference_sample_rate = TTS.sample_rate
-    gen.num_steps = NUM_STEPS
+    state = VOICES.state(name)
     with _generate_lock:
-        audio = TTS.generate(text, gen)
-    if len(audio.samples) == 0:
+        audio = MODEL.generate_audio(state, text)
+    samples = np.asarray(audio.detach().cpu().numpy(), dtype=np.float32)
+    samples = trim_silence(samples, MODEL.sample_rate)
+    if samples.size == 0:
         raise RuntimeError("Pocket TTS produced no audio")
-    return encode_wav(np.asarray(audio.samples, dtype=np.float32), audio.sample_rate)
+    return encode_wav(samples, MODEL.sample_rate)
 
 
 def _warmup() -> None:
