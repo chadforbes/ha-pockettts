@@ -12,6 +12,13 @@ export PORT="8000"
 export HF_HOME="/data/hf"
 mkdir -p "${HF_HOME}"
 
+# Hugging Face token (needed to download the gated voice-cloning weights used
+# for custom voices / .safetensors profiles).
+if bashio::config.has_value 'hf_token'; then
+  export HF_TOKEN="$(bashio::config 'hf_token')"
+  export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
+fi
+
 if bashio::config.has_value 'voice'; then
   export VOICE="$(bashio::config 'voice')"
 fi

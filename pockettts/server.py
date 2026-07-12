@@ -146,6 +146,11 @@ class VoiceManager:
 
 log(f"Loading Pocket TTS model (FP32, language={LANGUAGE})...")
 log("First launch downloads the model, which can take a few minutes.")
+if not (os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")):
+    log(
+        "No Hugging Face token set — only the built-in catalog voices will work. "
+        "Custom voices / .safetensors need the gated cloning weights (set 'hf_token')."
+    )
 MODEL = build_model()
 VOICES = VoiceManager(MODEL)
 for directory in VOICE_DIRS:

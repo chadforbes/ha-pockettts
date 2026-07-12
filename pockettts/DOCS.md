@@ -17,6 +17,25 @@ panel) and an HTTP API.
 | `eos_threshold` | End-of-speech threshold. Default `-4.0`; raise it (e.g. `0.0`) only if a voice cuts off early. |
 | `num_threads` | CPU threads used for inference. Default `2`. |
 | `voice` | Name or path of the **default** voice. Leave empty to use `alba`. |
+| `hf_token` | Hugging Face access token. Required for **custom voices** (cloning / `.safetensors`), which use gated model weights. Not needed for the built-in catalog voices. |
+
+## Custom voices need a Hugging Face token (one-time)
+
+The built-in catalog voices (`alba`, `cosette`, …) work out of the box. But
+**cloning your own voice — including loading a `.safetensors` profile — uses a
+gated model** that Kyutai distributes on Hugging Face. Set it up once:
+
+1. Go to <https://huggingface.co/kyutai/pocket-tts> and **accept the terms**
+   (log in / create a free account first).
+2. Create a token at <https://huggingface.co/settings/tokens> (a **Read** token
+   is enough).
+3. Paste it into the add-on's **`hf_token`** option and restart.
+
+The add-on then downloads the voice-cloning weights **once** (cached in `/data`),
+and your custom voices work from then on — no re-downloading, no re-cloning.
+
+Symptom if this is missing: the log shows *"We could not download the weights
+for the model with voice cloning …"* and only the catalog voices work.
 
 ## Voices & adding your own
 
