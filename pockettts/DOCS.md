@@ -12,9 +12,22 @@ add-on serves a small web UI (the Home Assistant ingress panel) and an HTTP API.
 
 | Option | Description |
 | --- | --- |
-| `num_steps` | Flow-matching steps per generation. Higher = slightly better quality, slower. Default `5`. |
+| `num_steps` | Flow-matching steps per generation. Higher = better quality, slower. Default `8`; try `12`–`24` for the best quality. |
 | `num_threads` | CPU threads used for inference. Default `2`. |
 | `voice` | Name (or path) of the **default** voice. Leave empty to use the built-in `bria` voice. |
+
+## Audio quality
+
+This add-on uses the **int8-quantized** ONNX PocketTTS model (that's what keeps
+it lightweight — no PyTorch). It won't quite match the full-precision (FP32)
+PyTorch build, but you can close most of the gap:
+
+- **Raise `num_steps`** (e.g. `16`) — the single biggest quality lever.
+- **Use a clean reference recording** as the voice: a real, un-processed
+  recording of the person — *not* a TTS-generated clip. Cloning from generated
+  audio compounds artifacts. Short (~10–20 s), mono, and ideally 24 kHz works
+  best (the server now resamples other rates with a proper anti-aliasing
+  filter).
 
 ## Voices & adding your own
 

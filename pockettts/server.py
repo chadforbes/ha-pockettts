@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lightweight Pocket TTS HTTP server backed by sherpa-onnx (ONNX Runtime).
 
-No PyTorch. Uses only the sherpa-onnx wheel + numpy + the Python standard
+No PyTorch. Uses the sherpa-onnx wheel + numpy + scipy + the Python standard
 library. Serves a small web UI (for the Home Assistant ingress panel) and a
 JSON ``/tts`` endpoint that returns a WAV file.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import tarfile
 import threading
@@ -20,6 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 import numpy as np
+import scipy.signal
 import sherpa_onnx
 
 MODEL_NAME = "sherpa-onnx-pocket-tts-int8-2026-01-26"
@@ -30,7 +32,7 @@ MODEL_URL = (
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 MODEL_DIR = DATA_DIR / MODEL_NAME
 
-NUM_STEPS = int(os.environ.get("NUM_STEPS", "5"))
+NUM_STEPS = int(os.environ.get("NUM_STEPS", "8"))
 NUM_THREADS = int(os.environ.get("NUM_THREADS", "2"))
 PORT = int(os.environ.get("PORT", "8000"))
 DEFAULT_VOICE_SPEC = os.environ.get("VOICE_WAV", "").strip()
@@ -104,12 +106,12 @@ def load_reference(path: Path, target_sr: int) -> np.ndarray:
         data = data.reshape(-1, channels).mean(axis=1)
 
     if sample_rate != target_sr and len(data) > 1:
-        new_len = int(round(len(data) * target_sr / sample_rate))
-        data = np.interp(
-            np.linspace(0, len(data) - 1, new_len),
-            np.arange(len(data)),
-            data,
-        ).astype(np.float32)
+        # Polyphase (anti-aliased) resampling — far cleaner than linear
+        # interpolation, which matters a lot for voice-clone fidelity.
+        divisor = math.gcd(int(sample_rate), int(target_sr))
+        up = int(target_sr) // divisor
+        down = int(sample_rate) // divisor
+        data = scipy.signal.resample_poly(data, up, down).astype(np.float32)
 
     return np.ascontiguousarray(data, dtype=np.float32)
 

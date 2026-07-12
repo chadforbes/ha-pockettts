@@ -23,7 +23,7 @@ RUN \
        ca-certificates \
   && python3 -m venv /opt/venv \
   && /opt/venv/bin/pip install --upgrade pip \
-  && /opt/venv/bin/pip install sherpa-onnx numpy \
+  && /opt/venv/bin/pip install sherpa-onnx numpy scipy \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/*
 
