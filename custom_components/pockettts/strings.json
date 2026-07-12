@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Pocket TTS",
+        "description": "Enter the address of your running `pocket-tts serve` instance.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect. Make sure `pocket-tts serve` is running and reachable at the given host and port."
+    },
+    "abort": {
+      "already_configured": "This Pocket TTS server is already configured."
+    }
+  }
+}
