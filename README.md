@@ -47,10 +47,16 @@ supported.**
 ### Configure
 
 1. **Settings → Devices & Services → Add Integration → Pocket TTS**.
-2. Enter the **host** and **port** of the Pocket TTS server (the add-on, with
-   port `8000` exposed).
+2. Enter the **host** and **port** of the Pocket TTS server. On Home Assistant
+   OS, expose the add-on's port `8000` (add-on **Configuration → Network**) and
+   use host `homeassistant.local`, port `8000`.
 
-### Use
+This creates a `tts.pocket_tts` entity that appears as a selectable
+Text-to-speech engine throughout Home Assistant.
+
+### Use it
+
+**In automations / scripts:**
 
 ```yaml
 action: tts.speak
@@ -60,6 +66,13 @@ data:
   media_player_entity_id: media_player.living_room
   message: "Hello from Pocket TTS!"
 ```
+
+**In an Assist voice pipeline:** go to **Settings → Voice assistants**, edit
+your pipeline, and pick **Pocket TTS** under *Text-to-speech* (with the voice you
+want). Your voice satellites will then reply using Pocket TTS.
+
+> The lean ONNX model is **English-only**. The integration advertises English
+> locales (en-US, en-GB, …) so it matches any English Assist pipeline.
 
 ---
 
