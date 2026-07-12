@@ -35,9 +35,12 @@ NUM_THREADS = int(os.environ.get("NUM_THREADS", "2"))
 PORT = int(os.environ.get("PORT", "8000"))
 DEFAULT_VOICE_SPEC = os.environ.get("VOICE_WAV", "").strip()
 
-# Folder where user-provided voice .wav files live (mounted read-only). Any
-# .wav dropped here becomes a selectable voice, alongside the bundled ones.
-USER_VOICE_DIR = Path(os.environ.get("VOICES_DIR", "/share/pockettts"))
+# Folders scanned for user voice .wav files (mounted read-only). Drop a .wav in
+# any of these on your Home Assistant host and it becomes a selectable voice.
+VOICE_DIRS = [
+    Path(os.environ.get("VOICES_DIR", "/share/pockettts")),
+    Path("/media/pockettts"),
+]
 
 _generate_lock = threading.Lock()
 
@@ -133,10 +136,11 @@ class VoiceManager:
     def catalog(self) -> dict[str, Path]:
         """Return {voice_name: path}; user voices override bundled ones."""
         voices: dict[str, Path] = {}
-        for directory in (MODEL_DIR / "test_wavs", USER_VOICE_DIR):
+        for directory in (MODEL_DIR / "test_wavs", *VOICE_DIRS):
             if directory.is_dir():
-                for wav in sorted(directory.glob("*.wav")):
-                    voices[wav.stem] = wav
+                for wav in sorted(directory.iterdir()):
+                    if wav.is_file() and wav.suffix.lower() == ".wav":
+                        voices[wav.stem] = wav
         # Allow a configured path that lives outside those folders.
         if DEFAULT_VOICE_SPEC:
             for candidate in (
@@ -177,6 +181,8 @@ ensure_model()
 log("Loading Pocket TTS model (sherpa-onnx)...")
 TTS = build_tts()
 VOICES = VoiceManager(TTS.sample_rate)
+for directory in VOICE_DIRS:
+    log(f"Voice folder {directory}: {'found' if directory.is_dir() else 'not present'}")
 log(f"Available voices: {', '.join(VOICES.names()) or '(none)'}")
 log(f"Default voice: {VOICES.default() or '(none)'}")
 log("Pocket TTS is ready.")

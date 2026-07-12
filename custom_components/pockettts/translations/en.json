@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Pocket TTS",
-        "description": "Enter the address of your running `pocket-tts serve` instance.",
+        "description": "Enter the address of the Pocket TTS add-on. On Home Assistant OS use your HA host IP (or homeassistant.local) and port 8000.",
         "data": {
           "name": "Name",
           "host": "Host",
