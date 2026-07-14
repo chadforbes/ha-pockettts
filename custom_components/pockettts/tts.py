@@ -42,14 +42,12 @@ async def async_setup_entry(
 class PocketTTSEntity(TextToSpeechEntity):
     """The Pocket TTS entity."""
 
-    _attr_has_entity_name = True
-    _attr_name = None
-
     def __init__(self, config_entry: PocketTTSConfigEntry) -> None:
         """Initialize the entity."""
         self._host: str = config_entry.data[CONF_HOST]
         self._port: int = config_entry.data[CONF_PORT]
         self._voices: list[Voice] = []
+        self._attr_name = config_entry.title or DEFAULT_NAME
         self._attr_unique_id = config_entry.entry_id
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
